@@ -49,6 +49,7 @@
     #include "slic3r/GUI/GUI.hpp"
     #include "slic3r/GUI/GUI_App.hpp"
     #include "slic3r/GUI/3DScene.hpp"
+#include "slic3r/GUI/InstanceCheck.hpp"
 #endif /* SLIC3R_GUI */
 
 using namespace Slic3r;
@@ -61,6 +62,12 @@ PrinterTechnology get_printer_technology(const DynamicConfig &config)
 
 int CLI::run(int argc, char **argv)
 {
+#ifdef SLIC3R_GUI
+	if (Slic3r::InstanceCheck::instance_check().check_with_message())
+	{
+		return -1;
+	}
+#endif /* SLIC3R_GUI */
 	// Switch boost::filesystem to utf8.
     try {
         boost::nowide::nowide_filesystem();
