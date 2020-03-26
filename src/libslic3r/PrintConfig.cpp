@@ -3152,18 +3152,69 @@ std::string DynamicPrintConfig::validate()
     // Full print config is initialized from the defaults.
     const ConfigOption *opt = this->option("printer_technology", false);
     auto printer_technology = (opt == nullptr) ? ptFFF : static_cast<PrinterTechnology>(dynamic_cast<const ConfigOptionEnumGeneric*>(opt)->value);
+    
+    std::string ret;
+    
     switch (printer_technology) {
     case ptFFF:
     {
         FullPrintConfig fpc;
         fpc.apply(*this, true);
         // Verify this print options through the FullPrintConfig.
-        return fpc.validate();
+        ret = fpc.validate();
+        break;
     }
     default:
         //FIXME no validation on SLA data?
-        return std::string();
+        ret = std::string();
     }
+    
+    if (!ret.empty()) return ret;
+    
+    // Out of range validation of numeric values.
+    for (const std::string &opt_key : this->keys()) {
+        const ConfigOption      *opt    = this->optptr(opt_key);
+        assert(opt != nullptr);
+        const ConfigOptionDef   *optdef = def()->get(opt_key);
+        assert(optdef != nullptr);
+        bool out_of_range = false;
+        switch (opt->type()) {
+        case coFloat:
+        case coPercent:
+        case coFloatOrPercent:
+        {
+            auto *fopt = static_cast<const ConfigOptionFloat*>(opt);
+            out_of_range = fopt->value < optdef->min || fopt->value > optdef->max;
+            break;
+        }
+        case coFloats:
+        case coPercents:
+            for (double v : static_cast<const ConfigOptionVector<double>*>(opt)->values)
+                if (v < optdef->min || v > optdef->max) {
+                    out_of_range = true;
+                    break;
+                }
+            break;
+        case coInt:
+        {
+            auto *iopt = static_cast<const ConfigOptionInt*>(opt);
+            out_of_range = iopt->value < optdef->min || iopt->value > optdef->max;
+            break;
+        }
+        case coInts:
+            for (int v : static_cast<const ConfigOptionVector<int>*>(opt)->values)
+                if (v < optdef->min || v > optdef->max) {
+                    out_of_range = true;
+                    break;
+                }
+            break;
+        default:;
+        }
+        if (out_of_range)
+            return std::string("Value out of range: " + opt_key);
+    }
+    
+    return ret;
 }
 
 //FIXME localize this function.
@@ -3289,49 +3340,6 @@ std::string FullPrintConfig::validate()
             if (this->get_abs_value(key, max_nozzle_diameter) > 10. * max_nozzle_diameter)
                 return std::string("Invalid extrusion width (too large): ") + key;
         }
-    }
-
-    // Out of range validation of numeric values.
-    for (const std::string &opt_key : this->keys()) {
-        const ConfigOption      *opt    = this->optptr(opt_key);
-        assert(opt != nullptr);
-        const ConfigOptionDef   *optdef = print_config_def.get(opt_key);
-        assert(optdef != nullptr);
-        bool out_of_range = false;
-        switch (opt->type()) {
-        case coFloat:
-        case coPercent:
-        case coFloatOrPercent:
-        {
-            auto *fopt = static_cast<const ConfigOptionFloat*>(opt);
-            out_of_range = fopt->value < optdef->min || fopt->value > optdef->max;
-            break;
-        }
-        case coFloats:
-        case coPercents:
-            for (double v : static_cast<const ConfigOptionVector<double>*>(opt)->values)
-                if (v < optdef->min || v > optdef->max) {
-                    out_of_range = true;
-                    break;
-                }
-            break;
-        case coInt:
-        {
-            auto *iopt = static_cast<const ConfigOptionInt*>(opt);
-            out_of_range = iopt->value < optdef->min || iopt->value > optdef->max;
-            break;
-        }
-        case coInts:
-            for (int v : static_cast<const ConfigOptionVector<int>*>(opt)->values)
-                if (v < optdef->min || v > optdef->max) {
-                    out_of_range = true;
-                    break;
-                }
-            break;
-        default:;
-        }
-        if (out_of_range)
-            return std::string("Value out of range: " + opt_key);
     }
 
     // The configuration is valid.
@@ -3575,7 +3583,38 @@ void DynamicPrintAndCLIConfig::handle_legacy(t_config_option_key &opt_key, std::
     }
 }
 
+static Points to_points(const std::vector<Vec2d> &dpts)
+{
+    Points pts; pts.reserve(dpts.size());
+    for (auto &v : dpts)
+        pts.emplace_back( coord_t(scale_(v.x())), coord_t(scale_(v.y())) );
+    return pts;    
 }
+
+Points get_bed_shape(const DynamicPrintConfig &config)
+{
+    const auto *bed_shape_opt = config.opt<ConfigOptionPoints>("bed_shape");
+    if (!bed_shape_opt) {
+        
+        // Here, it is certain that the bed shape is missing, so an infinite one
+        // has to be used, but still, the center of bed can be queried
+        if (auto center_opt = config.opt<ConfigOptionPoint>("center"))
+            return { scaled(center_opt->value) };
+        
+        return {};
+    }
+    
+    return to_points(bed_shape_opt->values);
+}
+
+Points get_bed_shape(const PrintConfig &cfg)
+{
+    return to_points(cfg.bed_shape.values);
+}
+
+Points get_bed_shape(const SLAPrinterConfig &cfg) { return to_points(cfg.bed_shape.values); }
+
+} // namespace Slic3r
 
 #include <cereal/types/polymorphic.hpp>
 CEREAL_REGISTER_TYPE(Slic3r::DynamicPrintConfig)
