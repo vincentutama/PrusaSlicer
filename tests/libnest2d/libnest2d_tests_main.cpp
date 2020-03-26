@@ -1118,7 +1118,7 @@ TEST_CASE("Test for bed center distance optimization", "[Nesting], [NestKernels]
     static const constexpr ClipperLib::cInt W = 10000000;
     
     // Get the input items and define the bin.
-    std::vector<Rectangle> input(9, {W, W});
+    std::vector<RectangleItem> input(9, {W, W});
     
     auto bin = Box::infinite();
     
@@ -1154,7 +1154,7 @@ TEST_CASE("Test for biggest bounding box area", "[Nesting], [NestKernels]")
     static const constexpr size_t N = 100;
     
     // Get the input items and define the bin.
-    std::vector<Rectangle> input(N, {W, W});
+    std::vector<RectangleItem> input(N, {W, W});
     
     auto bin = Box::infinite();
     
